@@ -21,7 +21,8 @@ class User(models.Model):
     position = models.CharField('Должность', max_length=100)
     ROLE_CHOICES = [
         ('LISTENER', 'Слушатель'),
-        ('SPEAKER', 'Спикер')
+        ('SPEAKER', 'Спикер'),
+        ('MANAGER', 'Организатор'),
     ]
     role = models.CharField(
         'Роль',

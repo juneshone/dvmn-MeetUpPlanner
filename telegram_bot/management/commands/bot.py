@@ -4,6 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from MeetUpPlanner import settings
 from telegram.ext import Updater, CommandHandler, CallbackContext, \
     CallbackQueryHandler, MessageHandler, Filters
+from telegram_bot.models import User
 
 
 def start(update: Update, context: CallbackContext) -> None:
@@ -56,7 +57,7 @@ def choose_events(update: Update, context: CallbackContext):
 
 
 def get_schedule_events(update: Update, context: CallbackContext):
-    Autorize = False  # Future models
+    # autorize = False  # Future models
     query = update.callback_query
     query.answer()
     data = query.data
@@ -70,31 +71,48 @@ def get_schedule_events(update: Update, context: CallbackContext):
             'Программа мероприятия',
             reply_markup=reply_markup
         )
+    # if data.startswith('event_listener'):
+    #     if User.telegram_id != query.message.from_user.id:
+    #         print(User.objects.get(username='user'), query.message.from_user.id)
+    #         events_keyboard = [
+    #             [InlineKeyboardButton("Регистрация",
+    #                                   callback_data='register_user')]
+    #         ]
+    #         reply_markup = InlineKeyboardMarkup(events_keyboard)
+    #         query.edit_message_text(
+    #             'Вы не авторизованны',
+    #             reply_markup=reply_markup
+    #         )
     if data.startswith('event_listener'):
-        if Autorize:
-            events_keyboard = [
-                [InlineKeyboardButton("Регистрация",
-                                      callback_data='register_user')]
-            ]
-            reply_markup = InlineKeyboardMarkup(events_keyboard)
-            query.edit_message_text(
-                'Вы не авторизованны',
-                reply_markup=reply_markup
-            )
-        else:
+        try:
+            user = User.objects.get(telegram_id=query.message.from_user.id)
+        except User.DoesNotExist:
+            user = None
+            print(query.message.from_user.id)
+
+        if user:
             events_keyboard = [
                 [InlineKeyboardButton("Задать вопрос докладчику",
-                                      callback_data='register_user')]
+                                      callback_data='#')]
             ]
             reply_markup = InlineKeyboardMarkup(events_keyboard)
             query.edit_message_text(
                 'Программа мероприятия',
                 reply_markup=reply_markup
             )
+        else:
+            events_keyboard = [
+                [InlineKeyboardButton("Регистрация", callback_data='register_user')]
+            ]
+            reply_markup = InlineKeyboardMarkup(events_keyboard)
+            query.edit_message_text(
+                'Вы не авторизованы',
+                reply_markup=reply_markup)
 
 
 def register_user(update: Update, context: CallbackContext):
     query = update.callback_query
+    id = query.message.chat_id
     if query:
         query.answer()
         data = query.data
@@ -144,6 +162,13 @@ def register_user(update: Update, context: CallbackContext):
         message.reply_text(
             f'Регистрация завершена. Ваши данные:\nФИО: {user_data["fio"]}\nТелефон: {user_data["phone"]}\nEmail: {user_data["email"]}'
         )
+        new_member = User(
+            username=user_data["fio"],
+            telegram_id=id,
+            email=user_data["email"],
+            phonenumber=user_data["phone"]
+            )
+        new_member.save()
         user_data.clear()
 
 

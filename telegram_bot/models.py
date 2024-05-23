@@ -17,8 +17,18 @@ class User(models.Model):
         max_length=20,
         unique=True
     )
-    company = models.CharField('Работодатель', max_length=200)
-    position = models.CharField('Должность', max_length=100)
+    company = models.CharField(
+        'Работодатель',
+        max_length=200,
+        null=True,
+        blank=True
+    )
+    position = models.CharField(
+        'Должность',
+        max_length=100,
+        null=True,
+        blank=True
+    )
     ROLE_CHOICES = [
         ('LISTENER', 'Слушатель'),
         ('SPEAKER', 'Спикер'),
@@ -46,6 +56,7 @@ class Event(models.Model):
     speaker = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
+        related_name='events',
         verbose_name='Спикер'
     )
     location = models.CharField('Место проведения', max_length=200)
@@ -73,16 +84,19 @@ class Question(models.Model):
         User,
         on_delete=models.CASCADE,
         related_name='question',
-        verbose_name='Вопрос от слушателя')
+        verbose_name='Вопрос от слушателя'
+    )
     speaker = models.ForeignKey(
         User,
         on_delete=models.CASCADE,
         related_name='answer',
-        verbose_name='Ответ спикера')
+        verbose_name='Ответ спикера'
+    )
     event = models.ForeignKey(
         Event,
         on_delete=models.CASCADE,
-        verbose_name='Вопрос мероприятия')
+        verbose_name='Вопрос мероприятия'
+    )
 
     def __str__(self):
         return self.description
@@ -98,8 +112,12 @@ class Messages(models.Model):
     participants = models.ManyToManyField(
         User,
         related_name='message',
-        verbose_name='Участники рассылки')
-    created_at = models.DateTimeField('Дата и время создания', auto_now_add=True)
+        verbose_name='Участники рассылки'
+    )
+    created_at = models.DateTimeField(
+        'Дата и время создания',
+        auto_now_add=True
+    )
 
     def __str__(self):
         return self.text

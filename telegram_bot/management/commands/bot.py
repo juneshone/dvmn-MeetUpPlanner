@@ -80,7 +80,7 @@ def get_schedule_events(update: Update, context: CallbackContext):
         if user:
             events_keyboard = [
                 [InlineKeyboardButton("Задать вопрос докладчику",
-                                      callback_data='get_question')]
+                                      callback_data='ask_question')]
             ]
             reply_markup = InlineKeyboardMarkup(events_keyboard)
             query.edit_message_text(
@@ -167,12 +167,11 @@ def register_user(update: Update, context: CallbackContext):
 
 def ask_question(update: Update, context: CallbackContext):
     query = update.callback_query
+    print(query)
     if query:
         query.answer()
         data = query.data
-        if data.startswith('get_question'):
-            event_id = data.split('_')[-1]
-            context.user_data['event_id'] = event_id
+        if data.startswith('ask_question'):
             context.user_data['step'] = 'ASK_QUESTION'
             query.message.reply_text('Задайте свой вопрос докладчику')
 
@@ -182,16 +181,12 @@ def save_question(update: Update, context: CallbackContext):
     user_data = context.user_data
 
     if 'step' in user_data and user_data['step'] == 'ASK_QUESTION':
-        question_text = message.text.strip()
+        question_text = message.text
         try:
             listener = User.objects.get(telegram_id=message.from_user.id)
-            event = Event.objects.get(id=user_data['event_id'])
-            speaker = event.speaker
             new_question = Question(
                 description=question_text,
                 listener=listener,
-                speaker=speaker,
-                event=event
             )
             new_question.save()
             message.reply_text('Ваш вопрос успешно отправлен')
@@ -233,17 +228,17 @@ class Command(BaseCommand):
         )
         dispatcher.add_handler(CallbackQueryHandler(
             ask_question,
-            pattern='get_question')
+            pattern='ask_question')
         )
         dispatcher.add_handler(
-            MessageHandler(Filters.text & ~Filters.command, ask_question)
+            MessageHandler(Filters.text & ~Filters.command, ask_question)  # При вызовах последующих фильтров они не отрабатывают
         )
         dispatcher.add_handler(CallbackQueryHandler(
             save_question,
             pattern='save_question')
         )
         dispatcher.add_handler(
-            MessageHandler(Filters.text & ~Filters.command, save_question)
+            MessageHandler(Filters.text & ~Filters.command, save_question)  # При вызовах последующих фильтров они не отрабатывают
         )
         updater.start_polling()
         updater.idle()

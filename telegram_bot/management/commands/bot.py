@@ -167,7 +167,6 @@ def register_user(update: Update, context: CallbackContext):
 
 def ask_question(update: Update, context: CallbackContext):
     query = update.callback_query
-    print(query)
     if query:
         query.answer()
         data = query.data
@@ -181,18 +180,27 @@ def save_question(update: Update, context: CallbackContext):
     user_data = context.user_data
 
     if 'step' in user_data and user_data['step'] == 'ASK_QUESTION':
-        question_text = message.text
+        # question_text = message.text
         try:
-            listener = User.objects.get(telegram_id=message.from_user.id)
-            new_question = Question(
-                description=question_text,
-                listener=listener,
-            )
-            new_question.save()
+            # listener = User.objects.get(telegram_id=message.from_user.id)
+            # new_question = Question(
+            #     description=question_text,
+            #     listener=listener,
+            # )
+            # new_question.save()
             message.reply_text('Ваш вопрос успешно отправлен')
         except User.DoesNotExist:
             message.reply_text('Произошла ошибка при отправке вопроса. Пожалуйста, попробуйте снова.')
         user_data.clear()
+
+
+def handle_user_message(update: Update, context: CallbackContext):
+    user_data = context.user_data
+
+    if 'step' in user_data and user_data['step'] == 'ASK_QUESTION':
+        save_question(update, context)
+    else:
+        register_user(update, context)
 
 
 class Command(BaseCommand):
@@ -223,22 +231,13 @@ class Command(BaseCommand):
             register_user,
             pattern='register_user')
         )
-        dispatcher.add_handler(
-            MessageHandler(Filters.text & ~Filters.command, register_user)
-        )
         dispatcher.add_handler(CallbackQueryHandler(
             ask_question,
             pattern='ask_question')
         )
         dispatcher.add_handler(
-            MessageHandler(Filters.text & ~Filters.command, ask_question)  # При вызовах последующих фильтров они не отрабатывают
+            MessageHandler(Filters.text & ~Filters.command, handle_user_message)
         )
-        dispatcher.add_handler(CallbackQueryHandler(
-            save_question,
-            pattern='save_question')
-        )
-        dispatcher.add_handler(
-            MessageHandler(Filters.text & ~Filters.command, save_question)  # При вызовах последующих фильтров они не отрабатывают
-        )
+        
         updater.start_polling()
         updater.idle()

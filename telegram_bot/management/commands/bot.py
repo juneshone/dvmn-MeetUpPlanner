@@ -163,24 +163,42 @@ def register_user(update: Update, context: CallbackContext):
             )
         new_member.save()
         user_data.clear()
-        
-        # get_schedule_events()
 
 
-def get_question(update: Update, context: CallbackContext):
+def ask_question(update: Update, context: CallbackContext):
     query = update.callback_query
     if query:
         query.answer()
         data = query.data
         if data.startswith('get_question'):
+            event_id = data.split('_')[-1]
+            context.user_data['event_id'] = event_id
+            context.user_data['step'] = 'ASK_QUESTION'
             query.message.reply_text('Задайте свой вопрос докладчику')
-            text_question = update.message.text  # закончили тут и все сломалось
-            new_question = Question(description=text_question)
-            new_question.save()
-            query.edit_message_text(
-                'Ваш вопрос успешно отправлен'
+
+
+def save_question(update: Update, context: CallbackContext):
+    message = update.message
+    user_data = context.user_data
+
+    if 'step' in user_data and user_data['step'] == 'ASK_QUESTION':
+        question_text = message.text.strip()
+        try:
+            listener = User.objects.get(telegram_id=message.from_user.id)
+            event = Event.objects.get(id=user_data['event_id'])
+            speaker = event.speaker
+            new_question = Question(
+                description=question_text,
+                listener=listener,
+                speaker=speaker,
+                event=event
             )
-            return
+            new_question.save()
+            message.reply_text('Ваш вопрос успешно отправлен')
+        except User.DoesNotExist:
+            message.reply_text('Произошла ошибка при отправке вопроса. Пожалуйста, попробуйте снова.')
+        user_data.clear()
+
 
 class Command(BaseCommand):
     help = 'Starts the Telegram bot'
@@ -214,8 +232,18 @@ class Command(BaseCommand):
             MessageHandler(Filters.text & ~Filters.command, register_user)
         )
         dispatcher.add_handler(CallbackQueryHandler(
-            get_question,
+            ask_question,
             pattern='get_question')
+        )
+        dispatcher.add_handler(
+            MessageHandler(Filters.text & ~Filters.command, ask_question)
+        )
+        dispatcher.add_handler(CallbackQueryHandler(
+            save_question,
+            pattern='save_question')
+        )
+        dispatcher.add_handler(
+            MessageHandler(Filters.text & ~Filters.command, save_question)
         )
         updater.start_polling()
         updater.idle()

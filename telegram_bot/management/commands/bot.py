@@ -64,7 +64,7 @@ def get_schedule_events(update: Update, context: CallbackContext):
     if data.startswith('event_speaker'):
         events_keyboard = [
             [InlineKeyboardButton("Получить вопросы от слушателей",
-                                  callback_data='#')]
+                                  callback_data='get_questions')]
         ]
         reply_markup = InlineKeyboardMarkup(events_keyboard)
         query.edit_message_text(
@@ -189,9 +189,43 @@ def save_question(update: Update, context: CallbackContext):
             # )
             # new_question.save()
             message.reply_text('Ваш вопрос успешно отправлен')
+            events_keyboard = [
+                [InlineKeyboardButton("Задать еще вопрос докладчику",
+                                      callback_data='ask_question')],
+                [InlineKeyboardButton("Выйти в выбор мероприятия",
+                                      callback_data='listener')]
+            ]
+            reply_markup = InlineKeyboardMarkup(events_keyboard)
+            message.reply_text(
+                'Выбор действия',
+                reply_markup=reply_markup
+            )
         except User.DoesNotExist:
             message.reply_text('Произошла ошибка при отправке вопроса. Пожалуйста, попробуйте снова.')
         user_data.clear()
+
+
+def get_users_questions(update: Update, context: CallbackContext):
+    questions = ['Как дела?', 'Что делаешь?']
+    query = update.callback_query
+    if query:
+        query.answer()
+        data = query.data
+        if data.startswith('get_questions'):
+            for question in questions:
+                question_keyboard = [
+                    [InlineKeyboardButton("Ответить на вопрос",
+                                          callback_data='#')]
+                ]
+                reply_markup = InlineKeyboardMarkup(question_keyboard)
+                query.message.reply_text(question, reply_markup=reply_markup)
+            quit_keyboard = [
+                [InlineKeyboardButton("Да",
+                                      callback_data='#')]
+            ]
+            reply_markup = InlineKeyboardMarkup(quit_keyboard)
+            query.message.reply_text(
+                "Перейти в начало?", reply_markup=reply_markup)
 
 
 def handle_user_message(update: Update, context: CallbackContext):
@@ -235,9 +269,13 @@ class Command(BaseCommand):
             ask_question,
             pattern='ask_question')
         )
+        dispatcher.add_handler(CallbackQueryHandler(
+            get_users_questions,
+            pattern='get_questions')
+        )
         dispatcher.add_handler(
             MessageHandler(Filters.text & ~Filters.command, handle_user_message)
         )
-        
+
         updater.start_polling()
         updater.idle()

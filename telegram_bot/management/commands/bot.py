@@ -1,4 +1,5 @@
 import re
+import random
 from django.core.management.base import BaseCommand
 
 from django.utils import timezone
@@ -9,7 +10,7 @@ from MeetUpPlanner import settings
 from telegram.ext import Updater, CommandHandler, CallbackContext, \
     CallbackQueryHandler, MessageHandler, Filters
 from telegram_bot.models import User, Event, Question
-
+from textwrap import dedent
 
 
 def start(update: Update, context: CallbackContext) -> None:
@@ -20,10 +21,8 @@ def start(update: Update, context: CallbackContext) -> None:
         "Я помогу тебе задавать вопросы докладчикам, следить за программой и "
         "получать уведомления."
     )
-
     registration_keyboard = [
-        [InlineKeyboardButton("Докладчик", callback_data='speaker')],
-        [InlineKeyboardButton("Слушатель", callback_data='listener')]
+        [InlineKeyboardButton("Продолжить", callback_data='menu')]
     ]
     reply_markup = InlineKeyboardMarkup(registration_keyboard)
 
@@ -33,18 +32,8 @@ def start(update: Update, context: CallbackContext) -> None:
 def choose_events(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
-    data = query.data
     events = Event.objects.filter(end_time__gte=timezone.now())
-    if data.startswith('speaker'):
-        events_keyboard = [
-            [InlineKeyboardButton(f"{event.title}", callback_data=str(event.id))] for event in events]
-        reply_markup = InlineKeyboardMarkup(events_keyboard)
-        query.edit_message_text(
-            'Получить программу мероприятий',
-            reply_markup=reply_markup
-        )
-
-    if data.startswith('listener'):
+    if events:
         events_keyboard = [
             [InlineKeyboardButton(f"{event.title}", callback_data=str(event.id))] for event in events]
         reply_markup = InlineKeyboardMarkup(events_keyboard)
@@ -52,25 +41,32 @@ def choose_events(update: Update, context: CallbackContext):
             'Выберите мероприятие',
             reply_markup=reply_markup
         )
+    else:
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='Актуальных мероприятий нет',
+        )
 
 
 def get_schedule_events(update: Update, context: CallbackContext):
-    # autorize = False  # Future models
     query = update.callback_query
     query.answer()
     data = query.data
     event_id = int(data)
     event = Event.objects.get(id=event_id)
-    text = (f"""
-        {event.title}
-        Начало - {event.start_time.strftime('%d %B %H:%M')}
-        {event.program_description}
-        Спикер - {event.speaker}
-        Место проведения - {event.location}
-        """)
+    context.bot_data['event'] = event.id
+    text = dedent(f'''
+    {event.title}
+    Начало - {event.start_time.strftime('%d %B %H:%M')}
+    {event.program_description}
+    Спикер - {event.speaker.username}
+    Место проведения  - {event.location}
+    ''')
 
+    context.bot_data['speaker'] = event.speaker
     try:
         user = get_object_or_404(User, telegram_id=query.from_user.id)
+        context.bot_data['user'] = user
         print(user)
     except Http404:
         user = None
@@ -78,8 +74,9 @@ def get_schedule_events(update: Update, context: CallbackContext):
     if user:
 
         keyboard = [
-            [InlineKeyboardButton('Задать вопрос спикеру', callback_data=event_id)] if user.role == 'LISTENER' else [],
-            [InlineKeyboardButton('Посмотреть вопросы слушателей', callback_data=event_id)] if user.role == 'SPEAKER' else [],
+            [InlineKeyboardButton('Задать вопрос спикеру', callback_data='ask_question')] if user.role == 'LISTENER' else [],
+            [InlineKeyboardButton('Посмотреть вопросы слушателей', callback_data='get_questions')] if user.role == 'SPEAKER' else [],
+            [InlineKeyboardButton("Вернуться к списку мероприятий", callback_data='menu')],
         ]
         context.bot.send_message(
             chat_id=update.effective_chat.id,
@@ -96,48 +93,6 @@ def get_schedule_events(update: Update, context: CallbackContext):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
-'''
-def get_schedule_events(update: Update, context: CallbackContext):
-    Autorize = False  # Future models
-    query = update.callback_query
-    query.answer()
-    data = query.data
-    if data.startswith('event_speaker'):
-        events_keyboard = [
-            [InlineKeyboardButton("Получить вопросы от слушателей",
-                                  callback_data='#')]
-        ]
-        reply_markup = InlineKeyboardMarkup(events_keyboard)
-        query.edit_message_text(
-            'Программа мероприятия',
-            reply_markup=reply_markup
-        )
-    if data.startswith('event_listener'):
-        try:
-            user = User.objects.get(telegram_id=query.from_user.id)
-        except User.DoesNotExist:
-            user = None
-
-        if user:
-            events_keyboard = [
-                [InlineKeyboardButton("Задать вопрос докладчику",
-                                      callback_data='ask_question')]
-            ]
-            reply_markup = InlineKeyboardMarkup(events_keyboard)
-            query.edit_message_text(
-                'Программа мероприятия',
-                reply_markup=reply_markup
-            )
-        else:
-            events_keyboard = [
-                [InlineKeyboardButton("Регистрация", callback_data='register_user')]
-            ]
-            reply_markup = InlineKeyboardMarkup(events_keyboard)
-            query.edit_message_text(
-                'Вы не авторизованы',
-                reply_markup=reply_markup)
-
-'''
 
 def register_user(update: Update, context: CallbackContext):
     query = update.callback_query
@@ -188,7 +143,7 @@ def register_user(update: Update, context: CallbackContext):
         user_data['email'] = email
         events_keyboard = [
             [InlineKeyboardButton("Вернуться к списку мероприятий",
-                                  callback_data='listener')]
+                                  callback_data='menu')]
         ]
         reply_markup = InlineKeyboardMarkup(events_keyboard)
         message.reply_text(
@@ -222,15 +177,23 @@ def save_question(update: Update, context: CallbackContext):
     user_data = context.user_data
 
     if 'step' in user_data and user_data['step'] == 'ASK_QUESTION':
-        # question_text = message.text
+        question_text = message.text
         try:
-            # listener = User.objects.get(telegram_id=message.from_user.id)
-            # new_question = Question(
-            #     description=question_text,
-            #     listener=listener,
-            # )
-            # new_question.save()
-            message.reply_text('Ваш вопрос успешно отправлен')
+            listener = User.objects.get(telegram_id=message.from_user.id)
+            Question.objects.create(
+                description=question_text,
+                listener=listener,
+                speaker=context.bot_data['speaker'],
+                event=get_object_or_404(Event, id=context.bot_data['event']),
+            )
+            keyboard = [
+                [InlineKeyboardButton("Вернуться к списку мероприятий", callback_data='menu')]
+            ]
+            context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text='Ваш вопрос успешно отправлен',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
         except User.DoesNotExist:
             message.reply_text('Произошла ошибка при отправке вопроса. Пожалуйста, попробуйте снова.')
         user_data.clear()
@@ -245,6 +208,72 @@ def handle_user_message(update: Update, context: CallbackContext):
         register_user(update, context)
 
 
+def get_questions(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    speaker = context.bot_data['user']
+    event = get_object_or_404(Event, id=context.bot_data['event'])
+    questions = Question.objects.filter(speaker=speaker.id, status=False, event=event)
+    if questions.count() == 0:
+        keyboard = [
+            [InlineKeyboardButton("Вернуться к списку мероприятий", callback_data='menu')]
+        ]
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='У вас нет неотвеченных вопросов',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+    else:
+        keyboard = [
+            [InlineKeyboardButton('Ответить на вопрос', callback_data='answer_question')],
+            [InlineKeyboardButton("Вернуться к списку мероприятий", callback_data='menu')],
+        ]
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f'Вам поступило {questions.count()} вопросов. Хотите ответить?',
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
+
+def answer_question(update: Update, context: CallbackContext):
+    event = get_object_or_404(Event, id=context.bot_data['event'])
+    question = random.choice(context.bot_data['user'].answer.filter(status=False, event=event).select_related())
+    context.bot_data['question'] = question
+    keyboard = [
+        [InlineKeyboardButton('Следующий вопрос', callback_data='next_question')],
+        [InlineKeyboardButton('Отметить как отвеченный', callback_data='status_question')],
+        [InlineKeyboardButton("Вернуться к списку мероприятий", callback_data='menu')],
+    ]
+    context.bot_data['question'] = question
+    context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=question.description,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+    message = update.effective_message
+    context.bot.delete_message(
+        chat_id=message.chat_id,
+        message_id=message.message_id
+    )
+
+
+def get_answer(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    if query.data == 'status_question':
+        context.bot_data['question'].status = True
+        context.bot_data['question'].save()
+        try:
+            return answer_question(update, context)
+        except IndexError:
+            return get_questions(update, context)
+    elif query.data == 'next_question':
+        try:
+            return answer_question(update, context)
+        except IndexError:
+            return get_questions(update, context)
+
+
 class Command(BaseCommand):
     help = 'Starts the Telegram bot'
 
@@ -255,19 +284,7 @@ class Command(BaseCommand):
         dispatcher.add_handler(CommandHandler('start', start))
         dispatcher.add_handler(CallbackQueryHandler(
             choose_events,
-            pattern='speaker')
-        )
-        dispatcher.add_handler(CallbackQueryHandler(
-            choose_events,
-            pattern='listener')
-        )
-        dispatcher.add_handler(CallbackQueryHandler(
-            get_schedule_events,
-            pattern='event_speaker')
-        )
-        dispatcher.add_handler(CallbackQueryHandler(
-            get_schedule_events,
-            pattern='event_listener')
+            pattern='menu')
         )
         dispatcher.add_handler(CallbackQueryHandler(
             register_user,
@@ -277,16 +294,29 @@ class Command(BaseCommand):
             ask_question,
             pattern='ask_question')
         )
+        dispatcher.add_handler(CallbackQueryHandler(
+            get_questions,
+            pattern='get_questions')
+        )
+        dispatcher.add_handler(CallbackQueryHandler(
+            answer_question,
+            pattern='answer_question')
+        )
+        dispatcher.add_handler(CallbackQueryHandler(
+            get_answer,
+            pattern='next_question')
+        )
+        dispatcher.add_handler(CallbackQueryHandler(
+            get_answer,
+            pattern='status_question')
+        )
         dispatcher.add_handler(
             MessageHandler(Filters.text & ~Filters.command, handle_user_message)
         )
-        '''
+
         dispatcher.add_handler(CallbackQueryHandler(
             get_schedule_events)
         )
-        dispatcher.add_handler(
-            MessageHandler(Filters.text & ~Filters.command, register_user)
-        )
-        '''
+
         updater.start_polling()
         updater.idle()

@@ -17,7 +17,7 @@ def start(update: Update, context: CallbackContext) -> None:
     full_name = update.message.from_user.full_name
 
     initial_message_text = (
-        f"Привет, {full_name}. Я PyMeetBot — твой помощник на Мероприятия! 🎉\n"
+        f"Привет, {full_name}. Я PyMeetBot — твой помощник на Мероприятиях! 🎉\n"
         "Я помогу тебе задавать вопросы докладчикам, следить за программой и "
         "получать уведомления."
     )
@@ -35,7 +35,12 @@ def choose_events(update: Update, context: CallbackContext):
     events = Event.objects.filter(end_time__gte=timezone.now())
     if events:
         events_keyboard = [
-            [InlineKeyboardButton(f"{event.title}", callback_data=str(event.id))] for event in events]
+            [InlineKeyboardButton(
+                f"{event.title}",
+                callback_data=str(event.id)
+                )
+            ] for event in events
+        ]
         reply_markup = InlineKeyboardMarkup(events_keyboard)
         query.edit_message_text(
             'Выберите мероприятие',
@@ -67,16 +72,31 @@ def get_schedule_events(update: Update, context: CallbackContext):
     try:
         user = get_object_or_404(User, telegram_id=query.from_user.id)
         context.bot_data['user'] = user
-        print(user)
     except Http404:
         user = None
 
     if user:
-
         keyboard = [
-            [InlineKeyboardButton('Задать вопрос спикеру', callback_data='ask_question')] if user.role == 'LISTENER' else [],
-            [InlineKeyboardButton('Посмотреть вопросы слушателей', callback_data='get_questions')] if user.role == 'SPEAKER' else [],
-            [InlineKeyboardButton("Вернуться к списку мероприятий", callback_data='menu')],
+            [
+                InlineKeyboardButton(
+                    'Задать вопрос спикеру',
+                    callback_data='ask_question'
+                )
+            ]
+            if user.role == 'LISTENER' else [],
+            [
+                InlineKeyboardButton(
+                    'Посмотреть вопросы слушателей',
+                    callback_data='get_questions'
+                )
+            ]
+            if user.role == 'SPEAKER' else [],
+            [
+                InlineKeyboardButton(
+                    "Вернуться к списку мероприятий",
+                    callback_data='menu'
+                )
+            ]
         ]
         context.bot.send_message(
             chat_id=update.effective_chat.id,
@@ -85,7 +105,12 @@ def get_schedule_events(update: Update, context: CallbackContext):
         )
     else:
         keyboard = [
-            [InlineKeyboardButton('Зарегистрироваться', callback_data='register_user')],
+            [
+                InlineKeyboardButton(
+                    'Зарегистрироваться',
+                    callback_data='register_user'
+                )
+            ]
         ]
         context.bot.send_message(
             chat_id=update.effective_chat.id,
@@ -113,7 +138,8 @@ def register_user(update: Update, context: CallbackContext):
         fio = message.text.strip()
         if not re.match(r'^[А-Яа-яЁёA-Za-z]+\s[А-Яа-яЁёA-Za-z]+\s[А-Яа-яЁёA-Za-z]+$', fio):
             message.reply_text(
-                'Некорректный формат ФИО. Пожалуйста, введите Фамилия Имя Отчество.'
+                'Некорректный формат ФИО. '
+                'Пожалуйста, введите Фамилия Имя Отчество.'
             )
             return
         user_data['fio'] = ' '.join(word.capitalize() for word in fio.split())
@@ -125,7 +151,8 @@ def register_user(update: Update, context: CallbackContext):
         phone = message.text
         if not re.match(r'^\+?\d{10,15}$', phone):
             message.reply_text(
-                'Номер телефона некорректный. Пожалуйста, введите номер в формате +1234567890 или 1234567890.'
+                'Номер телефона некорректный. '
+                'Пожалуйста, введите номер в формате +1234567890 или 1234567890.'
             )
             return
         user_data['phone'] = phone
@@ -137,7 +164,8 @@ def register_user(update: Update, context: CallbackContext):
         email = message.text
         if not re.match(r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$', email):
             message.reply_text(
-                'Адрес электронной почты некорректный. Пожалуйста, введите правильный адрес.'
+                'Адрес электронной почты некорректный. '
+                'Пожалуйста, введите правильный адрес.'
             )
             return
         user_data['email'] = email
@@ -187,7 +215,10 @@ def save_question(update: Update, context: CallbackContext):
                 event=get_object_or_404(Event, id=context.bot_data['event']),
             )
             keyboard = [
-                [InlineKeyboardButton("Вернуться к списку мероприятий", callback_data='menu')]
+                [InlineKeyboardButton(
+                    "Вернуться к списку мероприятий",
+                    callback_data='menu'
+                )]
             ]
             context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -195,7 +226,10 @@ def save_question(update: Update, context: CallbackContext):
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         except User.DoesNotExist:
-            message.reply_text('Произошла ошибка при отправке вопроса. Пожалуйста, попробуйте снова.')
+            message.reply_text(
+                'Произошла ошибка при отправке вопроса. '
+                'Пожалуйста, попробуйте снова.'
+            )
         user_data.clear()
 
 
@@ -213,10 +247,17 @@ def get_questions(update: Update, context: CallbackContext):
     query.answer()
     speaker = context.bot_data['user']
     event = get_object_or_404(Event, id=context.bot_data['event'])
-    questions = Question.objects.filter(speaker=speaker.id, status=False, event=event)
+    questions = Question.objects.filter(
+        speaker=speaker.id,
+        status=False,
+        event=event
+    )
     if questions.count() == 0:
         keyboard = [
-            [InlineKeyboardButton("Вернуться к списку мероприятий", callback_data='menu')]
+            [InlineKeyboardButton(
+                "Вернуться к списку мероприятий",
+                callback_data='menu'
+            )]
         ]
         context.bot.send_message(
             chat_id=update.effective_chat.id,
@@ -225,24 +266,42 @@ def get_questions(update: Update, context: CallbackContext):
         )
     else:
         keyboard = [
-            [InlineKeyboardButton('Ответить на вопрос', callback_data='answer_question')],
-            [InlineKeyboardButton("Вернуться к списку мероприятий", callback_data='menu')],
+            [InlineKeyboardButton(
+                'Ответить на вопрос',
+                callback_data='answer_question'
+                )],
+            [InlineKeyboardButton(
+                "Вернуться к списку мероприятий",
+                callback_data='menu'
+                )]
         ]
         context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f'Вам поступило {questions.count()} вопросов. Хотите ответить?',
+            text=f'Вам поступило {questions.count()} вопросf. Ответите?',
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
 
 def answer_question(update: Update, context: CallbackContext):
     event = get_object_or_404(Event, id=context.bot_data['event'])
-    question = random.choice(context.bot_data['user'].answer.filter(status=False, event=event).select_related())
+    question = random.choice(context.bot_data['user'].answer.filter(
+        status=False,
+        event=event
+    ).select_related())
     context.bot_data['question'] = question
     keyboard = [
-        [InlineKeyboardButton('Следующий вопрос', callback_data='next_question')],
-        [InlineKeyboardButton('Отметить как отвеченный', callback_data='status_question')],
-        [InlineKeyboardButton("Вернуться к списку мероприятий", callback_data='menu')],
+        [InlineKeyboardButton(
+            'Следующий вопрос',
+            callback_data='next_question'
+        )],
+        [InlineKeyboardButton(
+            'Отметить как отвеченный',
+            callback_data='status_question'
+        )],
+        [InlineKeyboardButton(
+            "Вернуться к списку мероприятий",
+            callback_data='menu'
+        )],
     ]
     context.bot_data['question'] = question
     context.bot.send_message(
@@ -282,40 +341,38 @@ class Command(BaseCommand):
         dispatcher = updater.dispatcher
 
         dispatcher.add_handler(CommandHandler('start', start))
-        dispatcher.add_handler(CallbackQueryHandler(
-            choose_events,
-            pattern='menu')
-        )
-        dispatcher.add_handler(CallbackQueryHandler(
-            register_user,
-            pattern='register_user')
-        )
-        dispatcher.add_handler(CallbackQueryHandler(
-            ask_question,
-            pattern='ask_question')
-        )
-        dispatcher.add_handler(CallbackQueryHandler(
-            get_questions,
-            pattern='get_questions')
-        )
-        dispatcher.add_handler(CallbackQueryHandler(
-            answer_question,
-            pattern='answer_question')
-        )
-        dispatcher.add_handler(CallbackQueryHandler(
-            get_answer,
-            pattern='next_question')
-        )
-        dispatcher.add_handler(CallbackQueryHandler(
-            get_answer,
-            pattern='status_question')
+        dispatcher.add_handler(
+            CallbackQueryHandler(choose_events, pattern='menu')
         )
         dispatcher.add_handler(
-            MessageHandler(Filters.text & ~Filters.command, handle_user_message)
+            CallbackQueryHandler(register_user, pattern='register_user')
+        )
+        dispatcher.add_handler(
+            CallbackQueryHandler(ask_question, pattern='ask_question')
+        )
+        dispatcher.add_handler(
+            CallbackQueryHandler(get_questions, pattern='get_questions')
+        )
+        dispatcher.add_handler(
+            CallbackQueryHandler(answer_question, pattern='answer_question')
+        )
+        dispatcher.add_handler(
+            CallbackQueryHandler(get_answer, pattern='next_question')
+        )
+        dispatcher.add_handler(
+            CallbackQueryHandler(get_answer, pattern='status_question')
+        )
+        dispatcher.add_handler(
+            MessageHandler(
+                Filters.text & ~Filters.command,
+                handle_user_message
+            )
         )
 
-        dispatcher.add_handler(CallbackQueryHandler(
-            get_schedule_events)
+        dispatcher.add_handler(
+            CallbackQueryHandler(
+                get_schedule_events
+            )
         )
 
         updater.start_polling()

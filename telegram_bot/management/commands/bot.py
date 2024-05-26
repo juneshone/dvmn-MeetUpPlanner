@@ -79,7 +79,7 @@ def get_schedule_events(update: Update, context: CallbackContext):
         keyboard = [
             [
                 InlineKeyboardButton(
-                    'Задать вопрос спикеру',
+                    'Задать вопрос докладчику',
                     callback_data='ask_question'
                 )
             ]
@@ -170,8 +170,10 @@ def register_user(update: Update, context: CallbackContext):
             return
         user_data['email'] = email
         events_keyboard = [
-            [InlineKeyboardButton("Вернуться к списку мероприятий",
-                                  callback_data='menu')]
+            [InlineKeyboardButton(
+                "Вернуться к списку мероприятий",
+                callback_data='menu'
+            )]
         ]
         reply_markup = InlineKeyboardMarkup(events_keyboard)
         message.reply_text(
@@ -196,7 +198,7 @@ def ask_question(update: Update, context: CallbackContext):
         query.answer()
         data = query.data
         if data.startswith('ask_question'):
-            context.user_data['step'] = 'ASK_QUESTION'
+            context.user_data['input_question'] = 'ASK_QUESTION'
             query.message.reply_text('Задайте свой вопрос докладчику')
 
 
@@ -204,10 +206,10 @@ def save_question(update: Update, context: CallbackContext):
     message = update.message
     user_data = context.user_data
 
-    if 'step' in user_data and user_data['step'] == 'ASK_QUESTION':
+    if 'input_question' in user_data and user_data['input_question'] == 'ASK_QUESTION':
         question_text = message.text
         try:
-            listener = User.objects.get(telegram_id=message.from_user.id)
+            listener = get_object_or_404(User, telegram_id=message.from_user.id)
             Question.objects.create(
                 description=question_text,
                 listener=listener,
@@ -231,15 +233,6 @@ def save_question(update: Update, context: CallbackContext):
                 'Пожалуйста, попробуйте снова.'
             )
         user_data.clear()
-
-
-def handle_user_message(update: Update, context: CallbackContext):
-    user_data = context.user_data
-
-    if 'step' in user_data and user_data['step'] == 'ASK_QUESTION':
-        save_question(update, context)
-    else:
-        register_user(update, context)
 
 
 def get_questions(update: Update, context: CallbackContext):
@@ -277,7 +270,7 @@ def get_questions(update: Update, context: CallbackContext):
         ]
         context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text=f'Вам поступило {questions.count()} вопросf. Ответите?',
+            text=f'Вам поступило {questions.count()} вопрос. Ответите?',
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
@@ -299,11 +292,14 @@ def answer_question(update: Update, context: CallbackContext):
             callback_data='status_question'
         )],
         [InlineKeyboardButton(
+            'Ввести ответ',
+            callback_data='write_answer'
+        )],
+        [InlineKeyboardButton(
             "Вернуться к списку мероприятий",
             callback_data='menu'
         )],
     ]
-    context.bot_data['question'] = question
     context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=question.description,
@@ -316,7 +312,45 @@ def answer_question(update: Update, context: CallbackContext):
     )
 
 
-def get_answer(update: Update, context: CallbackContext):
+def write_answer(update: Update, context: CallbackContext):
+    query = update.callback_query
+    if query:
+        query.answer()
+        data = query.data
+        if data.startswith('write_answer'):
+            context.user_data['input_speaker'] = 'WRITE_ANSWER'
+            query.message.reply_text('Введите свой ответ слушателю')
+
+
+def send_answer(update: Update, context: CallbackContext):
+    message = update.message
+    user_data = context.user_data
+
+    if 'input_speaker' in user_data and user_data['input_speaker'] == 'WRITE_ANSWER':
+        answer_text = message.text
+        try:
+            context.bot_data['question'].answer = answer_text
+            context.bot_data['question'].status = True
+            context.bot_data['question'].save()
+            keyboard = [
+                [InlineKeyboardButton(
+                    "Вернуться к списку мероприятий",
+                    callback_data='menu'
+                )],
+            ]
+            context.bot.send_message(
+                chat_id=int(context.bot_data['question'].listener.telegram_id),
+                text='Ваш ответ успешно отправлен',
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        except User.DoesNotExist:
+            context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text='Произошла ошибка при отправке ответа.Пожалуйста, попробуйте снова.',
+            )
+
+
+def get_speaker_answer(update: Update, context: CallbackContext):
     query = update.callback_query
     query.answer()
     if query.data == 'status_question':
@@ -331,6 +365,17 @@ def get_answer(update: Update, context: CallbackContext):
             return answer_question(update, context)
         except IndexError:
             return get_questions(update, context)
+
+
+def handle_user_message(update: Update, context: CallbackContext):
+    user_data = context.user_data
+
+    if 'input_question' in user_data and user_data['input_question'] == 'ASK_QUESTION':
+        save_question(update, context)
+    elif 'input_speaker' in user_data and user_data['input_speaker'] == 'WRITE_ANSWER':
+        send_answer(update, context)
+    else:
+        register_user(update, context)
 
 
 class Command(BaseCommand):
@@ -357,10 +402,13 @@ class Command(BaseCommand):
             CallbackQueryHandler(answer_question, pattern='answer_question')
         )
         dispatcher.add_handler(
-            CallbackQueryHandler(get_answer, pattern='next_question')
+            CallbackQueryHandler(get_speaker_answer, pattern='next_question')
         )
         dispatcher.add_handler(
-            CallbackQueryHandler(get_answer, pattern='status_question')
+            CallbackQueryHandler(get_speaker_answer, pattern='status_question')
+        )
+        dispatcher.add_handler(
+            CallbackQueryHandler(write_answer, pattern='write_answer')
         )
         dispatcher.add_handler(
             MessageHandler(

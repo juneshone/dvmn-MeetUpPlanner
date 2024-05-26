@@ -97,6 +97,8 @@ class Question(models.Model):
         on_delete=models.CASCADE,
         verbose_name='Вопрос мероприятия'
     )
+    answer = models.TextField('Ответ', blank=True, null=True)
+
 
     def __str__(self):
         return self.description
